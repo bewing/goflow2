@@ -40,6 +40,9 @@ const (
 	FLOW_TYPE_EGRESS_QUEUE = 1036
 	FLOW_TYPE_EXT_ACL      = 1037
 	FLOW_TYPE_EXT_FUNCTION = 1038
+
+	// According to https://github.com/sflow/host-sflow/blob/master/src/sflow/sflow.h#L566
+	FLOW_TYPE_EXT_ENTITIES = 2210
 )
 
 // Opaque counter_data types according to https://sflow.org/SFLOW-STRUCTS5.txt
@@ -351,6 +354,12 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
 		flowRecord.Data = function
+	case FLOW_TYPE_EXT_ENTITIES:
+		var entities ExtendedEntities
+		if err := utils.BinaryDecoder(payload, &entities.SrcDSClass, &entities.SrcDSIndex, &entities.DstDSClass, &entities.DstDsIndex); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = entities
 	default:
 		var rawRecord RawRecord
 		rawRecord.Data = payload.Bytes()

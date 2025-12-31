@@ -74,6 +74,14 @@ type ExtendedGateway struct {
 	LocalPref         uint32          `json:"local-pref"`
 }
 
+// ExtendedEntities carries physical or virtual host data
+type ExtendedEntities struct {
+	SrcDSClass uint32 `json:"src-ds-class"`
+	SrcDSIndex uint32 `json:"src-dc-index"`
+	DstDSClass uint32 `json:"dst-ds-class"`
+	DstDsIndex uint32 `json:"dst-ds-index"`
+}
+
 // EgressQueue reports a queue identifier for drop records.
 type EgressQueue struct {
 	Queue uint32 `json:"queue"`
