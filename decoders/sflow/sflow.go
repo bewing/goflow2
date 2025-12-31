@@ -4,6 +4,7 @@ package sflow
 import (
 	"bytes"
 	"fmt"
+	"math"
 
 	"github.com/netsampler/goflow2/v2/decoders/utils"
 )
@@ -40,6 +41,10 @@ const (
 	FLOW_TYPE_EGRESS_QUEUE = 1036
 	FLOW_TYPE_EXT_ACL      = 1037
 	FLOW_TYPE_EXT_FUNCTION = 1038
+
+	// According to https://sflow.org/sflow_host.txt
+	FLOW_TYPE_EXT_SOCKET_IPV4 = 2100
+	FLOW_TYPE_EXT_SOCKET_IPV6 = 2101
 )
 
 // Opaque counter_data types according to https://sflow.org/SFLOW-STRUCTS5.txt
@@ -50,6 +55,71 @@ const (
 	COUNTER_TYPE_VG        = 4
 	COUNTER_TYPE_VLAN      = 5
 	COUNTER_TYPE_CPU       = 1001
+)
+
+// Host counter types according to https://sflow.org/sflow_host.txt
+const (
+	COUNTER_TYPE_HOST_DESCR    = 2000
+	COUNTER_TYPE_HOST_ADAPTERS = 2001
+	COUNTER_TYPE_HOST_PARENT   = 2002
+	COUNTER_TYPE_HOST_CPU      = 2003
+	COUNTER_TYPE_HOST_MEMORY   = 2004
+	COUNTER_TYPE_HOST_DISK_IO  = 2005
+	COUNTER_TYPE_HOST_NET_IO   = 2006
+)
+
+// Virtual machine counter types according to https://sflow.org/sflow_host.txt
+const (
+	COUNTER_TYPE_VIRT_NODE    = 2100
+	COUNTER_TYPE_VIRT_CPU     = 2101
+	COUNTER_TYPE_VIRT_MEMORY  = 2102
+	COUNTER_TYPE_VIRT_DISK_IO = 2103
+	COUNTER_TYPE_VIRT_NET_IO  = 2104
+)
+
+// Machine type enumeration for host_descr
+const (
+	MACHINE_TYPE_UNKNOWN = 0
+	MACHINE_TYPE_OTHER   = 1
+	MACHINE_TYPE_X86     = 2
+	MACHINE_TYPE_X86_64  = 3
+	MACHINE_TYPE_IA64    = 4
+	MACHINE_TYPE_SPARC   = 5
+	MACHINE_TYPE_ALPHA   = 6
+	MACHINE_TYPE_POWERPC = 7
+	MACHINE_TYPE_M68K    = 8
+	MACHINE_TYPE_MIPS    = 9
+	MACHINE_TYPE_ARM     = 10
+	MACHINE_TYPE_HPPA    = 11
+	MACHINE_TYPE_S390    = 12
+)
+
+// OS name enumeration for host_descr
+const (
+	OS_NAME_UNKNOWN   = 0
+	OS_NAME_OTHER     = 1
+	OS_NAME_LINUX     = 2
+	OS_NAME_WINDOWS   = 3
+	OS_NAME_DARWIN    = 4
+	OS_NAME_HPUX      = 5
+	OS_NAME_AIX       = 6
+	OS_NAME_DRAGONFLY = 7
+	OS_NAME_FREEBSD   = 8
+	OS_NAME_NETBSD    = 9
+	OS_NAME_OPENBSD   = 10
+	OS_NAME_OSF       = 11
+	OS_NAME_SOLARIS   = 12
+)
+
+// Virtual domain state enumeration for virt_cpu
+const (
+	VIRT_DOMAIN_NOSTATE  = 0
+	VIRT_DOMAIN_RUNNING  = 1
+	VIRT_DOMAIN_BLOCKED  = 2
+	VIRT_DOMAIN_PAUSED   = 3
+	VIRT_DOMAIN_SHUTDOWN = 4
+	VIRT_DOMAIN_SHUTOFF  = 5
+	VIRT_DOMAIN_CRASHED  = 6
 )
 
 // DecoderError wraps an sFlow decode error.
@@ -119,6 +189,60 @@ func DecodeIP(payload *bytes.Buffer) (uint32, []byte, error) {
 	return ipVersion, ip, nil
 }
 
+// DecodeFloat32 reads a 32-bit IEEE 754 float from the payload.
+func DecodeFloat32(payload *bytes.Buffer) (float32, error) {
+	var bits uint32
+	if err := utils.BinaryDecoder(payload, &bits); err != nil {
+		return 0, fmt.Errorf("DecodeFloat32: [%w]", err)
+	}
+	return math.Float32frombits(bits), nil
+}
+
+// DecodeHostAdapters reads a variable-length array of host adapters.
+func DecodeHostAdapters(payload *bytes.Buffer) ([]HostAdapter, error) {
+	var count uint32
+	if err := utils.BinaryDecoder(payload, &count); err != nil {
+		return nil, fmt.Errorf("DecodeHostAdapters count: [%w]", err)
+	}
+
+	if count > 1000 { // protection against ddos
+		return nil, fmt.Errorf("DecodeHostAdapters: adapter count %d exceeds limit", count)
+	}
+
+	adapters := make([]HostAdapter, count)
+	for i := uint32(0); i < count; i++ {
+		var ifIndex uint32
+		if err := utils.BinaryDecoder(payload, &ifIndex); err != nil {
+			return nil, fmt.Errorf("DecodeHostAdapters ifIndex[%d]: [%w]", i, err)
+		}
+		adapters[i].IfIndex = ifIndex
+
+		var macCount uint32
+		if err := utils.BinaryDecoder(payload, &macCount); err != nil {
+			return nil, fmt.Errorf("DecodeHostAdapters macLen[%d]: [%w]", i, err)
+		}
+
+		macAddrs := make(utils.MacAddress, macCount)
+
+		if macLen > 64 {
+			return nil, fmt.Errorf("DecodeHostAdapters: MAC length %d exceeds limit", macLen)
+		}
+
+		macAddr := make([]byte, macLen)
+		if err := utils.BinaryDecoder(payload, macAddr); err != nil {
+			return nil, fmt.Errorf("DecodeHostAdapters macAddr[%d]: [%w]", i, err)
+		}
+		adapters[i].MacAddress = macAddr
+
+		padding := (4 - (macLen % 4)) % 4
+		if padding > 0 {
+			payload.Next(int(padding))
+		}
+	}
+
+	return adapters, nil
+}
+
 // DecodeCounterRecord decodes a counter record based on its data format.
 func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRecord, error) {
 	counterRecord := CounterRecord{
@@ -171,6 +295,187 @@ func DecodeCounterRecord(header *RecordHeader, payload *bytes.Buffer) (CounterRe
 			return counterRecord, &RecordError{header.DataFormat, err}
 		}
 		counterRecord.Data = ethernetCounters
+	case COUNTER_TYPE_HOST_DESCR:
+		var hostDescr HostDescr
+		if err := utils.BinaryDecoder(payload, &hostDescr.Hostname); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		// UUID is 16 bytes opaque - read as fixed-size byte array
+		if err := utils.BinaryDecoder(payload, hostDescr.UUID[:]); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		// MachineType and OSName are enums (uint32)
+		if err := utils.BinaryDecoder(payload,
+			&hostDescr.MachineType,
+			&hostDescr.OSName,
+		); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		// OSRelease is a string
+		if err := utils.BinaryDecoder(payload, &hostDescr.OSRelease); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = hostDescr
+	case COUNTER_TYPE_HOST_ADAPTERS:
+		var hostAdapters HostAdapters
+		adapters, err := DecodeHostAdapters(payload)
+		if err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		hostAdapters.Adapters = adapters
+		counterRecord.Data = hostAdapters
+	case COUNTER_TYPE_HOST_PARENT:
+		var hostParent HostParent
+		if err := utils.BinaryDecoder(payload,
+			&hostParent.ContainerType,
+			&hostParent.ContainerIndex,
+		); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = hostParent
+	case COUNTER_TYPE_HOST_CPU:
+		var hostCPU HostCPU
+		// Load averages are float32
+		var err error
+		if hostCPU.LoadOne, err = DecodeFloat32(payload); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		if hostCPU.LoadFive, err = DecodeFloat32(payload); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		if hostCPU.LoadFifteen, err = DecodeFloat32(payload); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		// Remaining fields are uint32
+		if err := utils.BinaryDecoder(payload,
+			&hostCPU.ProcRun,
+			&hostCPU.ProcTotal,
+			&hostCPU.CPUNum,
+			&hostCPU.CPUSpeed,
+			&hostCPU.Uptime,
+			&hostCPU.CPUUser,
+			&hostCPU.CPUNice,
+			&hostCPU.CPUSystem,
+			&hostCPU.CPUIdle,
+			&hostCPU.CPUWio,
+			&hostCPU.CPUIntr,
+			&hostCPU.CPUSintr,
+			&hostCPU.Interrupts,
+			&hostCPU.Contexts,
+		); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = hostCPU
+	case COUNTER_TYPE_HOST_MEMORY:
+		var hostMemory HostMemory
+		if err := utils.BinaryDecoder(payload,
+			&hostMemory.MemTotal,
+			&hostMemory.MemFree,
+			&hostMemory.MemShared,
+			&hostMemory.MemBuffers,
+			&hostMemory.MemCached,
+			&hostMemory.SwapTotal,
+			&hostMemory.SwapFree,
+			&hostMemory.PageIn,
+			&hostMemory.PageOut,
+			&hostMemory.SwapIn,
+			&hostMemory.SwapOut,
+		); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = hostMemory
+	case COUNTER_TYPE_HOST_DISK_IO:
+		var hostDiskIO HostDiskIO
+		if err := utils.BinaryDecoder(payload,
+			&hostDiskIO.DiskTotal,
+			&hostDiskIO.DiskFree,
+			&hostDiskIO.PartMaxUsed,
+			&hostDiskIO.Reads,
+			&hostDiskIO.BytesRead,
+			&hostDiskIO.ReadTime,
+			&hostDiskIO.Writes,
+			&hostDiskIO.BytesWritten,
+			&hostDiskIO.WriteTime,
+		); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = hostDiskIO
+	case COUNTER_TYPE_HOST_NET_IO:
+		var hostNetIO HostNetIO
+		if err := utils.BinaryDecoder(payload,
+			&hostNetIO.BytesIn,
+			&hostNetIO.PacketsIn,
+			&hostNetIO.ErrsIn,
+			&hostNetIO.DropsIn,
+			&hostNetIO.BytesOut,
+			&hostNetIO.PacketsOut,
+			&hostNetIO.ErrsOut,
+			&hostNetIO.DropsOut,
+		); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = hostNetIO
+	case COUNTER_TYPE_VIRT_NODE:
+		var virtNode VirtNode
+		if err := utils.BinaryDecoder(payload,
+			&virtNode.Mhz,
+			&virtNode.CPUs,
+			&virtNode.Memory,
+			&virtNode.MemoryFree,
+			&virtNode.NumDomains,
+		); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = virtNode
+	case COUNTER_TYPE_VIRT_CPU:
+		var virtCPU VirtCPU
+		if err := utils.BinaryDecoder(payload,
+			&virtCPU.State,
+			&virtCPU.CPUTime,
+			&virtCPU.NrVirtCPU,
+		); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = virtCPU
+	case COUNTER_TYPE_VIRT_MEMORY:
+		var virtMemory VirtMemory
+		if err := utils.BinaryDecoder(payload,
+			&virtMemory.Memory,
+			&virtMemory.MaxMemory,
+		); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = virtMemory
+	case COUNTER_TYPE_VIRT_DISK_IO:
+		var virtDiskIO VirtDiskIO
+		if err := utils.BinaryDecoder(payload,
+			&virtDiskIO.Capacity,
+			&virtDiskIO.Allocation,
+			&virtDiskIO.Available,
+			&virtDiskIO.RdReq,
+			&virtDiskIO.RdBytes,
+			&virtDiskIO.WrReq,
+			&virtDiskIO.WrBytes,
+			&virtDiskIO.Errs,
+		); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = virtDiskIO
+	case COUNTER_TYPE_VIRT_NET_IO:
+		var virtNetIO VirtNetIO
+		if err := utils.BinaryDecoder(payload,
+			&virtNetIO.RxBytes,
+			&virtNetIO.RxPackets,
+			&virtNetIO.RxErrs,
+			&virtNetIO.RxDrop,
+			&virtNetIO.TxBytes,
+			&virtNetIO.TxPackets,
+			&virtNetIO.TxErrs,
+			&virtNetIO.TxDrop,
+		); err != nil {
+			return counterRecord, &RecordError{header.DataFormat, err}
+		}
+		counterRecord.Data = virtNetIO
 	default:
 		var rawRecord RawRecord
 		rawRecord.Data = payload.Bytes()
@@ -351,6 +656,36 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 			return flowRecord, &RecordError{header.DataFormat, err}
 		}
 		flowRecord.Data = function
+	case FLOW_TYPE_EXT_SOCKET_IPV4:
+		extendedSocketIPv4 := ExtendedSocketIPv4{
+			LocalIP:  make([]byte, 4),
+			RemoteIP: make([]byte, 4),
+		}
+		if err := utils.BinaryDecoder(payload,
+			&extendedSocketIPv4.Protocol,
+			extendedSocketIPv4.LocalIP,
+			extendedSocketIPv4.RemoteIP,
+			&extendedSocketIPv4.LocalPort,
+			&extendedSocketIPv4.RemotePort,
+		); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = extendedSocketIPv4
+	case FLOW_TYPE_EXT_SOCKET_IPV6:
+		extendedSocketIPv6 := ExtendedSocketIPv6{
+			LocalIP:  make([]byte, 16),
+			RemoteIP: make([]byte, 16),
+		}
+		if err := utils.BinaryDecoder(payload,
+			&extendedSocketIPv6.Protocol,
+			extendedSocketIPv6.LocalIP,
+			extendedSocketIPv6.RemoteIP,
+			&extendedSocketIPv6.LocalPort,
+			&extendedSocketIPv6.RemotePort,
+		); err != nil {
+			return flowRecord, &RecordError{header.DataFormat, err}
+		}
+		flowRecord.Data = extendedSocketIPv6
 	default:
 		var rawRecord RawRecord
 		rawRecord.Data = payload.Bytes()
