@@ -200,14 +200,11 @@ func DecodeFlowRecord(header *RecordHeader, payload *bytes.Buffer) (FlowRecord, 
 		sampledHeader.HeaderData = payload.Bytes()
 		flowRecord.Data = sampledHeader
 	case FLOW_TYPE_ETH:
-		sampledEth := SampledEthernet{
-			SrcMac: make([]byte, 6),
-			DstMac: make([]byte, 6),
-		}
+		sampledEth := SampledEthernet{}
 		if err := utils.BinaryDecoder(payload,
 			&sampledEth.Length,
-			sampledEth.SrcMac,
-			sampledEth.DstMac,
+			&sampledEth.SrcMac,
+			&sampledEth.DstMac,
 			&sampledEth.EthType,
 		); err != nil {
 			return flowRecord, &RecordError{header.DataFormat, err}

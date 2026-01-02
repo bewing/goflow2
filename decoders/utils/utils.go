@@ -72,8 +72,8 @@ func BinaryRead(payload BytesBuffer, order binary.ByteOrder, data any) error {
 			copy(data, bs)
 		case IPAddress:
 			copy(data, bs)
-		case MacAddress:
-			copy(data, bs)
+		case *MacAddress:
+			copy(data[:], bs)
 		case []int16:
 			for i := range data {
 				data[i] = int16(order.Uint16(bs[2*i:]))
@@ -123,8 +123,8 @@ func intDataSize(data any) int {
 		return len(data)
 	case IPAddress:
 		return len(data)
-	case MacAddress:
-		return len(data)
+	case *MacAddress:
+		return 6
 	case int16, uint16, *int16, *uint16:
 		return 2
 	case []int16:

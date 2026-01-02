@@ -6,12 +6,12 @@ import (
 	"net/netip"
 )
 
-// MacAddress is a byte slice rendered as a MAC address in JSON.
-type MacAddress []byte
+// MacAddress is a 6-byte array rendered as a MAC address in JSON.
+type MacAddress [6]byte
 
 // MarshalJSON formats the MAC address as a JSON string.
 func (s *MacAddress) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("\"%s\"", net.HardwareAddr([]byte(*s)).String())), nil
+	return []byte(fmt.Sprintf("\"%s\"", net.HardwareAddr(s[:]).String())), nil
 }
 
 // IPAddress is a byte slice rendered as an IP address in JSON.
