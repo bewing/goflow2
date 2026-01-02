@@ -74,6 +74,14 @@ type ExtendedGateway struct {
 	LocalPref         uint32          `json:"local-pref"`
 }
 
+// ExtendedEntities carries physical or virtual host data
+type ExtendedEntities struct {
+	SrcDSClass uint32 `json:"src-ds-class"`
+	SrcDSIndex uint32 `json:"src-dc-index"`
+	DstDSClass uint32 `json:"dst-ds-class"`
+	DstDsIndex uint32 `json:"dst-ds-index"`
+}
+
 // EgressQueue reports a queue identifier for drop records.
 type EgressQueue struct {
 	Queue uint32 `json:"queue"`
@@ -134,4 +142,161 @@ type EthernetCounters struct {
 // RawRecord stores unparsed record bytes.
 type RawRecord struct {
 	Data []byte `json:"data"`
+}
+
+// HostDescr describes the host machine type and OS
+type HostDescr struct {
+	Hostname    string     `json:"hostname"`
+	UUID        utils.UUID `json:"uuid"`
+	MachineType uint32     `json:"machine-type"`
+	OSName      uint32     `json:"os-name"`
+	OSRelease   string     `json:"os-release"`
+}
+
+// HostAdapter represents a single network adapter.
+type HostAdapter struct {
+	IfIndex          uint32             `json:"if-index"`
+	MacAddressLength uint32             ``
+	MacAddress       []utils.MacAddress `json:"mac-address"`
+}
+
+// HostAdapters contains an array of host network adapters
+type HostAdapters struct {
+	AdaptersLength uint32        `json:"adapters-length"`
+	Adapters       []HostAdapter `json:"adapters"`
+}
+
+// HostParent identifies the container for this host
+type HostParent struct {
+	ContainerType  uint32 `json:"container-type"`
+	ContainerIndex uint32 `json:"container-index"`
+}
+
+// HostCPU provides CPU load and utilization statistics
+// Load values of -1.0 indicate unknown. Time values are in milliseconds.
+type HostCPU struct {
+	LoadOne     float32 `json:"load-one"`
+	LoadFive    float32 `json:"load-five"`
+	LoadFifteen float32 `json:"load-fifteen"`
+	ProcRun     uint32  `json:"proc-run"`
+	ProcTotal   uint32  `json:"proc-total"`
+	CPUNum      uint32  `json:"cpu-num"`
+	CPUSpeed    uint32  `json:"cpu-speed"`
+	Uptime      uint32  `json:"uptime"`
+	CPUUser     uint32  `json:"cpu-user"`
+	CPUNice     uint32  `json:"cpu-nice"`
+	CPUSystem   uint32  `json:"cpu-system"`
+	CPUIdle     uint32  `json:"cpu-idle"`
+	CPUWio      uint32  `json:"cpu-wio"`
+	CPUIntr     uint32  `json:"cpu-intr"`
+	CPUSintr    uint32  `json:"cpu-sintr"`
+	Interrupts  uint32  `json:"interrupts"`
+	Contexts    uint32  `json:"contexts"`
+}
+
+// HostMemory provides memory and swap usage statistics
+// All memory values are in bytes. Page and swap counts are operations.
+type HostMemory struct {
+	MemTotal   uint64 `json:"mem-total"`
+	MemFree    uint64 `json:"mem-free"`
+	MemShared  uint64 `json:"mem-shared"`
+	MemBuffers uint64 `json:"mem-buffers"`
+	MemCached  uint64 `json:"mem-cached"`
+	SwapTotal  uint64 `json:"swap-total"`
+	SwapFree   uint64 `json:"swap-free"`
+	PageIn     uint32 `json:"page-in"`
+	PageOut    uint32 `json:"page-out"`
+	SwapIn     uint32 `json:"swap-in"`
+	SwapOut    uint32 `json:"swap-out"`
+}
+
+// HostDiskIO provides disk I/O statistics
+// Disk sizes are in bytes, times are in milliseconds.
+type HostDiskIO struct {
+	DiskTotal    uint64 `json:"disk-total"`
+	DiskFree     uint64 `json:"disk-free"`
+	PartMaxUsed  uint32 `json:"part-max-used"` // percentage 0-100
+	Reads        uint32 `json:"reads"`
+	BytesRead    uint64 `json:"bytes-read"`
+	ReadTime     uint32 `json:"read-time"`
+	Writes       uint32 `json:"writes"`
+	BytesWritten uint64 `json:"bytes-written"`
+	WriteTime    uint32 `json:"write-time"`
+}
+
+// HostNetIO provides network I/O statistics
+// Byte counters are 64-bit, packet/error counters are 32-bit.
+type HostNetIO struct {
+	BytesIn    uint64 `json:"bytes-in"`
+	PacketsIn  uint32 `json:"packets-in"`
+	ErrsIn     uint32 `json:"errs-in"`
+	DropsIn    uint32 `json:"drops-in"`
+	BytesOut   uint64 `json:"bytes-out"`
+	PacketsOut uint32 `json:"packets-out"`
+	ErrsOut    uint32 `json:"errs-out"`
+	DropsOut   uint32 `json:"drops-out"`
+}
+
+// VirtNode describes the host for virtual machines
+type VirtNode struct {
+	Mhz        uint32 `json:"mhz"`
+	CPUs       uint32 `json:"cpus"`
+	Memory     uint64 `json:"memory"`
+	MemoryFree uint64 `json:"memory-free"`
+	NumDomains uint32 `json:"num-domains"`
+}
+
+// VirtCPU provides virtual machine CPU statistics
+type VirtCPU struct {
+	State     uint32 `json:"state"`
+	CPUTime   uint32 `json:"cpu-time"`
+	NrVirtCPU uint32 `json:"nr-virt-cpu"`
+}
+
+// VirtMemory provides virtual machine memory statistics
+type VirtMemory struct {
+	Memory    uint64 `json:"memory"`
+	MaxMemory uint64 `json:"max-memory"`
+}
+
+// VirtDiskIO provides virtual machine disk I/O statistics
+type VirtDiskIO struct {
+	Capacity   uint64 `json:"capacity"`
+	Allocation uint64 `json:"allocation"`
+	Available  uint64 `json:"available"`
+	RdReq      uint32 `json:"rd-req"`
+	RdBytes    uint64 `json:"rd-bytes"`
+	WrReq      uint32 `json:"wr-req"`
+	WrBytes    uint64 `json:"wr-bytes"`
+	Errs       uint32 `json:"errs"`
+}
+
+// VirtNetIO provides virtual machine network I/O statistics
+type VirtNetIO struct {
+	RxBytes   uint64 `json:"rx-bytes"`
+	RxPackets uint32 `json:"rx-packets"`
+	RxErrs    uint32 `json:"rx-errs"`
+	RxDrop    uint32 `json:"rx-drop"`
+	TxBytes   uint64 `json:"tx-bytes"`
+	TxPackets uint32 `json:"tx-packets"`
+	TxErrs    uint32 `json:"tx-errs"`
+	TxDrop    uint32 `json:"tx-drop"`
+}
+
+// ExtendedSocketIPv4 provides IPv4 socket information
+type ExtendedSocketIPv4 struct {
+	Protocol   uint32          `json:"protocol"`
+	LocalIP    utils.IPAddress `json:"local-ip"`
+	RemoteIP   utils.IPAddress `json:"remote-ip"`
+	LocalPort  uint32          `json:"local-port"`
+	RemotePort uint32          `json:"remote-port"`
+}
+
+// ExtendedSocketIPv6 provides IPv6 socket information
+type ExtendedSocketIPv6 struct {
+	Protocol   uint32          `json:"protocol"`
+	LocalIP    utils.IPAddress `json:"local-ip"`
+	RemoteIP   utils.IPAddress `json:"remote-ip"`
+	LocalPort  uint32          `json:"local-port"`
+	RemotePort uint32          `json:"remote-port"`
 }
